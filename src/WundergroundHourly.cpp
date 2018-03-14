@@ -23,35 +23,38 @@ SOFTWARE.
 See more at http://blog.squix.ch
 */
 
-#include <ESPWiFi.h>
+#include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266HTTPClient.h>
-#include "WundergroundConditions.h"
+#include "WundergroundHourly.h"
 
-WundergroundConditions::WundergroundConditions(boolean _isMetric) {
+WundergroundHourly::WundergroundHourly(boolean _isMetric, boolean _is24Hours) {
   isMetric = _isMetric;
+  is24Hours = _is24Hours;
 }
 
-void WundergroundConditions::setMetric(boolean isMetric) {
+void WundergroundHourly::setMetric(bool isMetric) {
   this->isMetric = isMetric;
 }
-
-void WundergroundConditions::updateConditions(WGConditions *conditions, String apiKey, String language, String country, String city) {
-  doUpdate(conditions, "http://api.wunderground.com/api/" + apiKey + "/conditions/lang:" + language + "/q/" + country + "/" + city + ".json");
+void WundergroundHourly::set24Hours(bool is24Hours) {
+  this->is24Hours = is24Hours;
 }
 
-// wunderground change the API URL scheme:
-// http://api.wunderground.com/api/<API-KEY>/conditions/lang:de/q/zmw:00000.215.10348.json
-void WundergroundConditions::updateConditions(WGConditions *conditions, String apiKey, String language, String zmwCode) {
-  doUpdate(conditions, "http://api.wunderground.com/api/" + apiKey + "/conditions/lang:" + language + "/q/zmw:" + zmwCode + ".json");
+void WundergroundHourly::updateHourly(WGHourly *hourlies, String apiKey, String language, String country, String city) {
+  doUpdate(hourlies, "http://api.wunderground.com/api/" + apiKey + "/hourly/lang:" + language + "/q/" + country + "/" + city + ".json");
 }
 
-void WundergroundConditions::updateConditionsPWS(WGConditions *conditions, String apiKey, String language, String pws) {
-  doUpdate(conditions, "http://api.wunderground.com/api/" + apiKey + "/conditions/lang:" + language + "/q/pws:" + pws + ".json");
+
+void WundergroundHourly::updateHourlyPWS(WGHourly *hourlies, String apiKey, String language, String pws) {
+  doUpdate(hourlies, "http://api.wunderground.com/api/" + apiKey + "/hourly/lang:" + language + "/q/pws:" + pws + ".json");
 }
 
-void WundergroundConditions::doUpdate(WGConditions *conditions, String url) {
-  this->conditions = conditions;
+void WundergroundHourly::updateHourlyZMW(WGHourly *hourlies, String apiKey, String language, String zmwCode) {
+  doUpdate(hourlies, "http://api.wunderground.com/api/" + apiKey + "/hourly/lang:" + language + "/q/zmw:" + zmwCode + ".json");
+}
+
+void WundergroundHourly::doUpdate(WGHourly *hourlies, String url) {
+  this->hourlies = hourlies;
   JsonStreamingParser parser;
   parser.setListener(this);
 
@@ -84,120 +87,79 @@ void WundergroundConditions::doUpdate(WGConditions *conditions, String url) {
       }
     }
   }
-  this->conditions = nullptr;
+  this->hourlies = nullptr;
 }
 
-void WundergroundConditions::whitespace(char c) {
+void WundergroundHourly::whitespace(char c) {
   Serial.println("whitespace");
 }
 
-void WundergroundConditions::startDocument() {
+void WundergroundHourly::startDocument() {
   Serial.println("start document");
 }
 
-void WundergroundConditions::key(String key) {
+void WundergroundHourly::key(String key) {
   currentKey = String(key);
+
 }
 
-void WundergroundConditions::value(String value) {
-
-  if (currentKey == "wind_mph" && !isMetric) {
-    conditions->windSpeed = value + "mph";
+void WundergroundHourly::value(String value) {
+  if (currentKey == "hour") {
+    currentHour = value.toInt();
   }
 
-  if (currentKey == "wind_kph" && isMetric) {
-    conditions->windSpeed = value + "km/h";
+  if (is24Hours && currentKey == "hour_padded") {
+    hourlies[currentHour].hour = value + ":00";
+  }
+  if (!is24Hours && currentKey == "civil") {
+    hourlies[currentHour].hour = value;
   }
 
-   if (currentKey == "wind_dir") {
-    conditions->windDir = value;
-  }
-
-   if (currentKey == "local_time_rfc822") {
-    conditions->date = value.substring(0, 16);
-  }
-
-  if (currentKey == "observation_time_rfc822") {
-    conditions->observationDate = value.substring(0, 16);
-  }
-
-  if (currentKey == "observation_time") {
-    conditions->observationTime = value;
-  }
-
-
-  if (currentKey == "temp_f" && !isMetric) {
-    conditions->currentTemp = value;
-  }
-  if (currentKey == "temp_c" && isMetric) {
-    conditions->currentTemp = value;
-  }
   if (currentKey == "icon") {
-    conditions->weatherIcon = value;
+    hourlies[currentHour].icon = value;
   }
-  if (currentKey == "weather") {
-    conditions->weatherText = value;
-  }
-  if (currentKey == "relative_humidity") {
-    conditions->humidity = value;
-  }
-  if (currentKey == "pressure_mb" && isMetric) {
-    conditions->pressure = value + "mb";
-  }
-  if (currentKey == "pressure_in" && !isMetric) {
-    conditions->pressure = value + "in";
+  if (currentKey == "condition") {
+    hourlies[currentHour].title = value;
   }
 
-  if (currentKey == "feelslike_f" && !isMetric) {
-    conditions->feelslike = value;
+
+  if (currentParent == "temp" && currentKey == "english" && !isMetric) {
+    hourlies[currentHour].temp = value;
+  }
+  if (currentParent == "temp" && currentKey == "metric" && isMetric) {
+    hourlies[currentHour].temp = value;
   }
 
-  if (currentKey == "feelslike_c" && isMetric) {
-    conditions->feelslike = value;
-  }
-
-  if (currentKey == "UV") {
-    conditions->UV = value;
-  }
-
-  if (currentKey == "dewpoint_f" && !isMetric) {
-    conditions->dewPoint = value;
-  }
-  if (currentKey == "dewpoint_c" && isMetric) {
-    conditions->dewPoint = value;
-  }
-  if (currentKey == "precip_today_metric" && isMetric) {
-    conditions->precipitationToday = value + "mm";
-  }
-  if (currentKey == "precip_today_in" && !isMetric) {
-    conditions->precipitationToday = value + "in";
+  if (currentKey == "pop") {
+      hourlies[currentHour].PoP = value;
   }
 
 }
 
-void WundergroundConditions::endArray() {
+void WundergroundHourly::endArray() {
 
 }
 
 
-void WundergroundConditions::startObject() {
+void WundergroundHourly::startObject() {
   currentParent = currentKey;
 }
 
-void WundergroundConditions::endObject() {
+void WundergroundHourly::endObject() {
   currentParent = "";
 }
 
-void WundergroundConditions::endDocument() {
+void WundergroundHourly::endDocument() {
 
 }
 
-void WundergroundConditions::startArray() {
+void WundergroundHourly::startArray() {
 
 }
 
 
-String WundergroundConditions::getMeteoconIcon(String iconText) {
+
+String WundergroundHourly::getMeteoconIcon(String iconText) {
   if (iconText == "chanceflurries") return "F";
   if (iconText == "chancerain") return "Q";
   if (iconText == "chancesleet") return "W";
