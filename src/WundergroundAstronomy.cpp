@@ -25,65 +25,59 @@ See more at http://blog.squix.ch
 
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
+#include <ESP8266HTTPClient.h>
 #include "WundergroundAstronomy.h"
 
 
 WundergroundAstronomy::WundergroundAstronomy(boolean _usePM) {
   usePM = _usePM;
 }
-void WundergroundAstronomy::updateAstronomy(WGAstronomy *astronomy, String apiKey, String language, String country, String city) {
-  doUpdate(astronomy, "/api/" + apiKey + "/astronomy/lang:" + language + "/q/" + country + "/" + city + ".json");
+void WundergroundAstronomy::setPM(boolean usePM) {
+  this->usePM = usePM;
 }
-// end JJG add  ////////////////////////////////////////////////////////////////////
+void WundergroundAstronomy::updateAstronomy(WGAstronomy *astronomy, String apiKey, String language, String country, String city) {
+  doUpdate(astronomy, "http://api.wunderground.com/api/" + apiKey + "/astronomy/lang:" + language + "/q/" + country + "/" + city + ".json");
+}
 
 void WundergroundAstronomy::updateAstronomyPWS(WGAstronomy *astronomy, String apiKey, String language, String pws) {
-  doUpdate(astronomy, "/api/" + apiKey + "/astronomy/lang:" + language + "/q/pws:" + pws + ".json");
+  doUpdate(astronomy, "http://api.wunderground.com/api/" + apiKey + "/astronomy/lang:" + language + "/q/pws:" + pws + ".json");
 }
 
 void WundergroundAstronomy::doUpdate(WGAstronomy *astronomy, String url) {
   this->astronomy = astronomy;
   JsonStreamingParser parser;
   parser.setListener(this);
-  WiFiClient client;
-  const int httpPort = 80;
-  if (!client.connect("api.wunderground.com", httpPort)) {
-    Serial.println("connection failed");
-    return;
-  }
 
-  Serial.print("Requesting URL: ");
-  Serial.println(url);
+  HTTPClient http;
 
-  // This will send the request to the server
-  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: api.wunderground.com\r\n" +
-               "Connection: close\r\n\r\n");
-  int retryCounter = 0;
-  while(!client.available()) {
-    delay(1000);
-    retryCounter++;
-    if (retryCounter > 10) {
-      return;
-    }
-  }
-
-  int pos = 0;
-  boolean isBody = false;
+  http.begin(url);
+  bool isBody = false;
   char c;
+  int size;
+  Serial.print("[HTTP] GET...\n");
+  // start connection and send HTTP header
+  int httpCode = http.GET();
+  Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+  if(httpCode > 0) {
 
-  int size = 0;
-  client.setNoDelay(false);
-  while(client.connected()) {
-    while((size = client.available()) > 0) {
-      c = client.read();
-      if (c == '{' || c == '[') {
-        isBody = true;
-      }
-      if (isBody) {
-        parser.parse(c);
+
+
+    WiFiClient * client = http.getStreamPtr();
+
+    while(client->connected()) {
+      while((size = client->available()) > 0) {
+        c = client->read();
+        if (c == '{' || c == '[') {
+
+          isBody = true;
+        }
+        if (isBody) {
+          parser.parse(c);
+        }
       }
     }
   }
+  this->astronomy = nullptr;
 }
 
 void WundergroundAstronomy::whitespace(char c) {
@@ -114,83 +108,104 @@ void WundergroundAstronomy::value(String value) {
 
 
   if (currentParent == "sunrise") {      // Has a Parent key and 2 sub-keys
-	if (currentKey == "hour") {
-		int tempHour = value.toInt();    // do this to concert to 12 hour time (make it a function!)
-		if (usePM && tempHour > 12){
-			tempHour -= 12;
-			isPM = true;
-		}
-		else isPM = false;
-		char tempHourBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempHourBuff, "%2d", tempHour);			// fowlerk add for formatting, 12/22/16
-		astronomy->sunriseTime = String(tempHourBuff);				// fowlerk add for formatting, 12/22/16
-        //sunriseTime = value;
+    if (currentKey == "hour") {
+      int tempHour = value.toInt();    // do this to concert to 12 hour time (make it a function!)
+      if (usePM && tempHour > 12){
+        tempHour -= 12;
+        isPM = true;
       }
-	if (currentKey == "minute") {
-		char tempMinBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempMinBuff, "%02d", value.toInt());	// fowlerk add for formatting, 12/22/16
-		astronomy->sunriseTime += ":" + String(tempMinBuff);		// fowlerk add for formatting, 12/22/16
-		if (isPM) sunriseTime += "pm";
-		else if (usePM) sunriseTime += "am";
-	}
+      else {
+        isPM = false;
+      }
+      char tempHourBuff[3] = "";
+      sprintf(tempHourBuff, "%02d", tempHour);
+      astronomy->sunriseTime = String(tempHourBuff);
+    }
+    if (currentKey == "minute") {
+      char tempMinBuff[4] = "";
+      if (usePM) {
+        sprintf(tempMinBuff, "%02d%s", value.toInt(), isPM?"pm":"am");
+      } else {
+        sprintf(tempMinBuff, "%02d", value.toInt());
+      }
+      astronomy->sunriseTime += ":" + String(tempMinBuff);
+
+    }
+    this->sunriseTime.trim();
   }
 
 
   if (currentParent == "sunset") {      // Has a Parent key and 2 sub-keys
-	if (currentKey == "hour") {
-		int tempHour = value.toInt();   // do this to concert to 12 hour time (make it a function!)
-		if (usePM && tempHour > 12){
-			tempHour -= 12;
-			isPM = true;
-		}
-		else isPM = false;
-		char tempHourBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempHourBuff, "%2d", tempHour);			// fowlerk add for formatting, 12/22/16
-		astronomy->sunsetTime = String(tempHourBuff);				// fowlerk add for formatting, 12/22/16
-       // sunsetTime = value;
+    if (currentKey == "hour") {
+      int tempHour = value.toInt();   // do this to concert to 12 hour time (make it a function!)
+      if (usePM && tempHour > 12) {
+        tempHour -= 12;
+        isPM = true;
+      } else {
+        isPM = false;
       }
-	if (currentKey == "minute") {
-		char tempMinBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempMinBuff, "%02d", value.toInt());	// fowlerk add for formatting, 12/22/16
-		astronomy->sunsetTime += ":" + String(tempMinBuff);		// fowlerk add for formatting, 12/22/16
-		if (isPM) sunsetTime += "pm";
-		else if(usePM) sunsetTime += "am";
+      char tempHourBuff[3] = "";
+      sprintf(tempHourBuff, "%02d", tempHour);
+      astronomy->sunsetTime = String(tempHourBuff);
     }
+    if (currentKey == "minute") {
+      char tempMinBuff[4] = "";
+      if (usePM) {
+        sprintf(tempMinBuff, "%02d%s", value.toInt(), isPM?"pm":"am");
+      } else {
+        sprintf(tempMinBuff, "%02d", value.toInt());
+      }
+      astronomy->sunsetTime += ":" + String(tempMinBuff);
+    }
+    this->sunsetTime.trim();
   }
 
   if (currentParent == "moonrise") {      // Has a Parent key and 2 sub-keys
-	if (currentKey == "hour") {
-		int tempHour = value.toInt();   // do this to concert to 12 hour time (make it a function!)
-		if (usePM && tempHour > 12){
-			tempHour -= 12;
-			isPM = true;
-		}
-		else isPM = false;
-		char tempHourBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempHourBuff, "%2d", tempHour);			// fowlerk add for formatting, 12/22/16
-		astronomy->moonriseTime = String(tempHourBuff);			// fowlerk add for formatting, 12/22/16
-       // moonriseTime = value;
-      }
-	if (currentKey == "minute") {
-		char tempMinBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempMinBuff, "%02d", value.toInt());	// fowlerk add for formatting, 12/22/16
-		astronomy->moonriseTime += ":" + String(tempMinBuff);		// fowlerk add for formatting, 12/22/16
-		if (isPM) moonriseTime += "pm";
-		else if (usePM) moonriseTime += "am";
+    if (currentKey == "hour") {
+    int tempHour = value.toInt();   // do this to concert to 12 hour time (make it a function!)
+    if (usePM && tempHour > 12){
+      tempHour -= 12;
+      isPM = true;
     }
+    else isPM = false;
+    char tempHourBuff[3] = "";
+    sprintf(tempHourBuff, "%02d", tempHour);
+    astronomy->moonriseTime = String(tempHourBuff);
+    }
+    if (currentKey == "minute") {
+      char tempMinBuff[4] = "";
+      if (usePM) {
+        sprintf(tempMinBuff, "%02d%s", value.toInt(), isPM?"pm":"am");
+      } else {
+        sprintf(tempMinBuff, "%02d", value.toInt());
+      }
+      astronomy->moonriseTime += ":" + String(tempMinBuff);
+    }
+    this->moonriseTime.trim();
   }
 
-  if (currentParent == "moonset") {      // Not used - has a Parent key and 2 sub-keys
-	if (currentKey == "hour") {
-		char tempHourBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempHourBuff, "%2d", value.toInt());	// fowlerk add for formatting, 12/22/16
-		astronomy->moonsetTime = String(tempHourBuff);				// fowlerk add for formatting, 12/22/16
+  if (currentParent == "moonset") {      // Has a Parent key and 2 sub-keys
+    if (currentKey == "hour") {
+      int tempHour = value.toInt();   // do this to concert to 12 hour time (make it a function!)
+      if (usePM && tempHour > 12){
+        tempHour -= 12;
+        isPM = true;
+      }
+      else isPM = false;
+      char tempHourBuff[3] = "";
+      sprintf(tempHourBuff, "%02d", tempHour);
+      astronomy->moonsetTime = String(tempHourBuff);
     }
-	if (currentKey == "minute") {
-		char tempMinBuff[3] = "";						// fowlerk add for formatting, 12/22/16
-		sprintf(tempMinBuff, "%02d", value.toInt());	// fowlerk add for formatting, 12/22/16
-		astronomy->moonsetTime += ":" + String(tempMinBuff);		// fowlerk add for formatting, 12/22/16
+    if (currentKey == "minute") {
+      char tempMinBuff[4] = "";
+      if (usePM) {
+        sprintf(tempMinBuff, "%02d%s", value.toInt(), isPM?"pm":"am");
+      } else {
+        sprintf(tempMinBuff, "%02d", value.toInt());
+      }
+      astronomy->moonsetTime += ":" + String(tempMinBuff);
     }
+    astronomy->moonsetTime.trim();
   }
 
 }

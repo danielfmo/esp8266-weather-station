@@ -28,7 +28,7 @@ See more at http://blog.squix.ch
 #include <JsonListener.h>
 #include <JsonStreamingParser.h>
 
-struct WGAstronomy {
+typedef struct WGAstronomy {
   String moonPctIlum;
   String moonAge;
   String moonPhase;
@@ -36,7 +36,7 @@ struct WGAstronomy {
   String sunsetTime;
   String moonriseTime;
   String moonsetTime;
-};
+} WGAstronomy;
 
 class WundergroundAstronomy: public JsonListener {
   private:
@@ -61,7 +61,7 @@ class WundergroundAstronomy: public JsonListener {
     WundergroundAstronomy(boolean usePM);
     void updateAstronomy(WGAstronomy *astronomy, String apiKey, String language, String country, String city);
     void updateAstronomyPWS(WGAstronomy *astronomy, String apiKey, String language, String pws);
-
+    void setPM(boolean usePM);
     virtual void whitespace(char c);
 
     virtual void startDocument();

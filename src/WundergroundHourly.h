@@ -28,40 +28,42 @@ See more at http://blog.squix.ch
 #include <JsonListener.h>
 #include <JsonStreamingParser.h>
 
-typedef struct WGConditions {
-  String currentTemp;
-  String windSpeed;
-  String windDir;
-  String weatherIcon;
-  String weatherText;
-  String humidity;
-  String pressure;
-  String dewPoint;
-  String precipitationToday;
-  String feelslike;
-  String UV;
-  String observationTime;
-  String date;
-  String observationDate;
-} WGConditions;
+typedef struct WGHourly {
+  String icon;
+  String title;
+  String temp;
+  String hour;
+  String PoP;
+} WGForecast;
 
-class WundergroundConditions: public JsonListener {
+class WundergroundHourly: public JsonListener {
   private:
-    boolean isMetric = true;
     String currentKey;
-    String currentParent;
-    WGConditions *conditions;
+    String currentParent = "";
+    WGHourly *hourlies;
+
+    long localEpoc = 0;
+    int gmtOffset = 1;
+    long localMillisAtUpdate;
+    boolean isMetric = true;
+    boolean is24Hours = true;
 
 
-  void doUpdate(WGConditions *conditions, String url);
+    void doUpdate(WGHourly *hourlies, String url);
+
+    int currentHour;
+
+
 
   public:
-    WundergroundConditions(boolean isMetric);
-    void updateConditions(WGConditions *conditions, String apiKey, String language, String country, String city);
-    void updateConditions(WGConditions *conditions, String apiKey, String language, String zmwCode);
-    void updateConditionsPWS(WGConditions *conditions, String apiKey, String language, String pws);
-    void setMetric(boolean isMetric);
-    String getMeteoconIcon(String icon);
+    WundergroundHourly(boolean isMetric, boolean is24Hours);
+    void updateHourly(WGHourly *hourlies, String apiKey, String language, String country, String city);
+    void updateHourlyPWS(WGHourly *hourlies, String apiKey, String language, String pws);
+    void updateHourlyZMW(WGHourly *hourlies, String apiKey, String language, String zmwCode);
+    void setMetric(bool isMetric);
+    void set24Hours(bool use24Hours);
+    String getMeteoconIcon(String iconText);
+
     virtual void whitespace(char c);
 
     virtual void startDocument();
